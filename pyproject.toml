@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hh-applicant-gui"
+version = "0.1.0"
+description = "Локальная панель для hh-applicant-tool"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "hh-applicant-tool>=2.5",
+]
+
+[project.scripts]
+hh-applicant-gui = "hh_gui.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["hh_gui*"]
+
+[tool.setuptools.package-data]
+hh_gui = ["static/**/*"]
