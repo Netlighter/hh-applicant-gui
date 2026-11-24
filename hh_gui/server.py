@@ -14,6 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import __version__
 from .commands import CommandError, build_invocation
 from .daylog import summarize_day
 from .leads import LeadError, clamp_limit, collect_leads, read_cache, write_cache
@@ -256,6 +257,7 @@ async def state(configDir: str = "") -> JSONResponse:
             "profiles": iter_profiles(root),
             "platform": platform.system(),
             "running": runner.running(),
+            "version": __version__,
         }
     )
 

@@ -803,11 +803,28 @@ max_retries = 3
     dock.classList.toggle("collapsed", !open);
     if (!open) {
       dock.style.height = "";
+      placeVersion();
       return;
     }
     const height = Math.min(window.innerHeight * 0.7, Math.max(180, state.termHeight || 280));
     dock.style.height = `${height}px`;
+    placeVersion();
     requestAnimationFrame(() => fitActive());
+  }
+
+  function placeVersion() {
+    const corner = document.getElementById("version-corner");
+    const dock = document.getElementById("dock");
+    if (!corner) return;
+    const open = dock && !dock.classList.contains("collapsed");
+    const height = open ? dock.getBoundingClientRect().height : 0;
+    corner.style.bottom = `${height + 10}px`;
+  }
+
+  function paintVersion() {
+    const label = document.getElementById("version-label");
+    if (!label) return;
+    label.textContent = state.version ? `v${state.version}` : "v…";
   }
 
   function openLatestJournal() {
@@ -1123,6 +1140,7 @@ max_retries = 3
         const next = Math.min(window.innerHeight * 0.72, Math.max(168, startH - (nextEvent.clientY - startY)));
         state.termHeight = next;
         dock.style.height = `${next}px`;
+        placeVersion();
         fitActive();
       }
       function up() {
@@ -2722,6 +2740,8 @@ max_retries = 3
       state.profiles = data.profiles || [];
       state.defaultConfigRoot = data.defaultConfigRoot || "";
       state.configRoot = data.configRoot || "";
+      state.version = data.version || "";
+      paintVersion();
       if (!state.profiles.some((item) => item.id === state.globals.profile)) state.globals.profile = ".";
     } catch (error) {
       toast(error.message);
