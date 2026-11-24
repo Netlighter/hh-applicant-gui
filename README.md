@@ -30,11 +30,34 @@ curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/in
 
 Другой каталог: `HH_GUI_DIR=/opt/hh-applicant-gui curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash`.
 
+## Фон через systemd
+
+Так панель работает без открытого терминала и поднимается после перезагрузки. Команда ставит сервис и сразу запускает его. Слушает всю локальную сеть, порт 8787:
+
+```bash
+HH_GUI_SERVICE=1 curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash
+```
+
+Только этот компьютер, без доступа из сети: добавьте `HH_GUI_HOST=127.0.0.1` перед `curl`.
+
+Дальше обычные команды systemd:
+
+```bash
+systemctl status hh-applicant-gui
+sudo journalctl -u hh-applicant-gui -f
+sudo systemctl restart hh-applicant-gui
+sudo systemctl stop hh-applicant-gui
+```
+
+`status` показывает, жив ли процесс. `journalctl` показывает его вывод. `stop` останавливает до следующей перезагрузки или команды `sudo systemctl start hh-applicant-gui`. Убрать автозапуск: `sudo systemctl disable --now hh-applicant-gui`.
+
+Сервис запускается от того пользователя, который выполнил установку, и читает его `~/.config/hh-applicant-tool`.
+
 ## Обновление
 
 Та же команда, что при установке. Она скачивает свежий архив и обновляет пакеты в `.venv`. Версия панели и эта команда написаны в правом нижнем углу страницы.
 
-Перед новым запуском остановите старый процесс. Пока он держит порт 8787, второй не поднимется.
+Если сервис уже стоит, скрипт перезапускает его сам. Иначе остановите старый процесс: пока он держит порт 8787, второй не поднимется.
 
 Кнопка «Обновления» на обзоре только спрашивает у `hh-applicant-tool`, вышла ли новая версия утилиты, и печатает ответ в журнал. Саму панель эта кнопка не обновляет.
 

@@ -97,19 +97,60 @@ install_panel() {
   "$DEST/.venv/bin/python" -m pip install -U -e "$DEST"
 }
 
+install_service() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemctl есть только в Linux с systemd. Сервис не установлен." >&2
+    exit 1
+  fi
+  local host="${HH_GUI_HOST:-0.0.0.0}"
+  local port="${HH_GUI_PORT:-8787}"
+  local user unit
+  user="$(id -un)"
+  unit="/etc/systemd/system/hh-applicant-gui.service"
+  as_root tee "$unit" >/dev/null <<EOF
+[Unit]
+Description=HH Applicant GUI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${user}
+WorkingDirectory=${DEST}
+ExecStart=${DEST}/.venv/bin/hh-applicant-gui --host ${host} --port ${port} --no-open
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  as_root systemctl daemon-reload
+  as_root systemctl enable --now hh-applicant-gui.service
+  echo "Сервис запущен. Адрес: http://${host}:${port}"
+  echo "Статус: systemctl status hh-applicant-gui"
+  echo "Журнал: sudo journalctl -u hh-applicant-gui -f"
+}
+
 main() {
   ensure_tools
   local py
   py="$(pick_python)"
   download_sources
+  DEST="$(cd "$DEST" && pwd)"
   install_panel "$py"
+  if [[ "${HH_GUI_SERVICE:-}" == "1" ]]; then
+    install_service
+  elif [[ -f /etc/systemd/system/hh-applicant-gui.service ]] && command -v systemctl >/dev/null 2>&1; then
+    as_root systemctl restart hh-applicant-gui.service
+    echo "Сервис hh-applicant-gui перезапущен."
+  fi
   cat <<EOF
 
 Панель установлена: $DEST
-Запуск: $DEST/.venv/bin/hh-applicant-gui
-Без своего экрана: $DEST/.venv/bin/hh-applicant-gui --host 0.0.0.0 --port 8787 --no-open
+Запуск вручную: $DEST/.venv/bin/hh-applicant-gui
+Фоновый сервис: HH_GUI_SERVICE=1 curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash
 
-Повторный запуск этого скрипта обновляет панель. Старый процесс перед запуском нужно остановить.
+Повторный запуск этого скрипта обновляет панель. Если сервис уже включён, он перезапускается сам.
 EOF
 }
 
