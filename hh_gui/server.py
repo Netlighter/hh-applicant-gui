@@ -93,12 +93,12 @@ def resolve_binary() -> tuple[str | None, str | None]:
         if acceptable_binary(path):
             return str(path), None
         return None, f"По этому пути нет исполняемого файла hh-applicant-tool: {path}"
-    found = shutil.which("hh-applicant-tool")
-    if found and acceptable_binary(Path(found)):
-        return found, None
     sibling = Path(sys.executable).resolve().parent / "hh-applicant-tool"
     if acceptable_binary(sibling):
         return str(sibling), None
+    found = shutil.which("hh-applicant-tool")
+    if found and acceptable_binary(Path(found)):
+        return found, None
     return None, None
 
 

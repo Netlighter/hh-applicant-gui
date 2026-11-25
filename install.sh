@@ -121,7 +121,14 @@ install_panel() {
     fi
   fi
   "$DEST/.venv/bin/python" -m pip install -U pip
+  "$DEST/.venv/bin/python" -m pip install -U hh-applicant-tool
   "$DEST/.venv/bin/python" -m pip install -U -e "$DEST"
+  if [[ ! -x "$DEST/.venv/bin/hh-applicant-tool" ]]; then
+    echo "hh-applicant-tool не установился." >&2
+    exit 1
+  fi
+  mkdir -p "$HOME/.local/bin"
+  ln -sfn "$DEST/.venv/bin/hh-applicant-tool" "$HOME/.local/bin/hh-applicant-tool"
 }
 
 install_service() {
@@ -145,6 +152,7 @@ Type=simple
 User=${user}
 WorkingDirectory=${DEST}
 ExecStart=${DEST}/.venv/bin/hh-applicant-gui --host ${host} --port ${port} --no-open
+Environment=PATH=${DEST}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Restart=always
 RestartSec=3
 
@@ -173,11 +181,9 @@ main() {
   fi
   cat <<EOF
 
-Панель установлена: $DEST
-Запуск вручную: $DEST/.venv/bin/hh-applicant-gui
-Фоновый сервис: curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash -s -- --service
-
-Повторный запуск этого скрипта обновляет панель. Если сервис уже включён, он перезапускается сам.
+Панель: $DEST
+Утилита: $HOME/.local/bin/hh-applicant-tool
+Обновление панели и утилиты — та же команда установки. Если сервис уже включён, он перезапускается сам.
 EOF
 }
 
