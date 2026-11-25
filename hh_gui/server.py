@@ -30,6 +30,7 @@ from .paths import (
     save_settings,
     tool_config_root,
 )
+from .prompts import apply_edits, known_groups, read_group
 from .toml_form import FormError, apply_fields, read_fields, write_assignment
 from .runner import BusyError, Job, Runner
 
@@ -612,6 +613,47 @@ async def vacancy_score(body: dict) -> JSONResponse:
     except BusyError as exc:
         return error(409, str(exc))
     return JSONResponse({"id": job_id, "already": False})
+
+
+@app.get("/api/prompts")
+async def get_prompts(group: str, configDir: str = "", profile: str = ".") -> JSONResponse:
+    if group not in known_groups():
+        return error(400, "Неизвестный раздел промптов")
+    try:
+        folder = profile_dir(resolve_config_root(configDir or None), profile)
+    except PathError as exc:
+        return error(400, str(exc))
+    path = folder / "config.toml"
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    try:
+        payload = read_group(current, group)
+    except FormError as exc:
+        return error(400, str(exc))
+    return JSONResponse(payload)
+
+
+@app.post("/api/prompts")
+async def put_prompts(body: dict) -> JSONResponse:
+    group = body.get("group")
+    edits = body.get("fields")
+    if not isinstance(group, str) or group not in known_groups():
+        return error(400, "Неизвестный раздел промптов")
+    if not isinstance(edits, list):
+        return error(400, "Нет полей для записи")
+    try:
+        globals_ = globals_of(body)
+        folder = profile_dir(root_from_globals(globals_), str(globals_.get("profile") or "."))
+    except PathError as exc:
+        return error(400, str(exc))
+    path = folder / "config.toml"
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    try:
+        merged = apply_edits(current, edits)
+        payload = read_group(merged, group)
+    except FormError as exc:
+        return error(400, str(exc))
+    atomic_write(path, merged)
+    return JSONResponse(payload)
 
 
 @app.post("/api/config/prompt")

@@ -8,6 +8,7 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import termios
 import threading
 import time
@@ -461,9 +462,12 @@ class Runner:
                 return
             try:
                 argv, display = build_invocation(message, binary)
+                op = message.get("op") if isinstance(message.get("op"), str) else ""
+                if message.get("noBump") is True and op == "reply-chats":
+                    argv = [sys.executable, "-m", "hh_gui.no_bump", *argv[1:]]
+                    display = f"{display}  · без напоминаний"
                 cols = int(message.get("cols") or 100)
                 rows = int(message.get("rows") or 24)
-                op = message.get("op") if isinstance(message.get("op"), str) else ""
                 self.start(argv, display, op=op, cols=cols, rows=rows)
             except BusyError as exc:
                 await self.broadcast({"type": "error", "message": str(exc)})

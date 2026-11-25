@@ -257,6 +257,25 @@ input, select, textarea {
 }
 .row > input, .preset-row > input, .preset-row > select { flex: 1; min-width: 140px; width: auto; }
 textarea { min-height: 88px; resize: vertical; }
+.subtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.subtab {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius);
+  min-height: 32px;
+  padding: 6px 12px;
+}
+.subtab.on { background: #3a1c18; color: var(--text); border-color: #8d3a32; }
+.prompt-box {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.prompt-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 input:focus, select:focus, textarea:focus { border-color: #8d4a43; }
 input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
 .check { display: flex; gap: 8px; align-items: center; }

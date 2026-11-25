@@ -109,12 +109,20 @@ def apply_fields(text: str, fields: dict) -> str:
 
 
 def write_assignment(text: str, section: str, key: str, value: str) -> str:
+    return _write_assignment(text, section, key, _quote(value))
+
+
+def clear_assignment(text: str, section: str, key: str) -> str:
+    return _write_assignment(text, section, key, None)
+
+
+def _write_assignment(text: str, section: str, key: str, value: str | None) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_.]+", section) or not re.fullmatch(r"[A-Za-z0-9_]+", key):
         raise FormError("Недопустимое имя поля")
     if text and not text.endswith("\n"):
         text += "\n"
     lines = text.splitlines(keepends=True)
-    updated = _upsert_section(lines, section, {key: _quote(value)})
+    updated = _upsert_section(lines, section, {key: value})
     rendered = "".join(updated)
     if rendered and not rendered.endswith("\n"):
         rendered += "\n"

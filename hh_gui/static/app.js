@@ -187,7 +187,7 @@ max_retries = 3
         handleCaptcha: true,
       },
       apply: defaultApply(),
-      reply: { resumeId: "", maxPages: "20", dryRun: "no", loop: "yes" },
+      reply: { resumeId: "", maxPages: "20", dryRun: "no", loop: "yes", noBump: false },
       clear: { blacklist: "", olderThan: "", deleteChat: false, dryRun: "yes" },
       auth: { username: "" },
       api: { method: "GET", endpoint: "/me", params: "", asJson: false },
@@ -196,6 +196,8 @@ max_retries = 3
       leadsLimit: 80,
       vacancyLimit: 20,
       scorePrompt: "",
+      applyTab: "search",
+      chatTab: "run",
     };
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE) || "null");
@@ -210,6 +212,8 @@ max_retries = 3
       saved.leadsLimit = clampLimit(saved.leadsLimit);
       saved.vacancyLimit = clampScoreLimit(saved.vacancyLimit);
       saved.scorePrompt = typeof saved.scorePrompt === "string" ? saved.scorePrompt : "";
+      saved.applyTab = ["search", "filter", "letter", "tests"].includes(saved.applyTab) ? saved.applyTab : "search";
+      saved.chatTab = ["run", "reply", "options", "bump"].includes(saved.chatTab) ? saved.chatTab : "run";
       return { ...empty, ...saved };
     } catch {
       return empty;
@@ -269,6 +273,8 @@ max_retries = 3
       leadsLimit: state.leadsLimit,
       vacancyLimit: state.vacancyLimit,
       scorePrompt: state.scorePrompt,
+      applyTab: state.applyTab,
+      chatTab: state.chatTab,
     };
     localStorage.setItem(STORAGE, JSON.stringify(data));
   }
@@ -482,6 +488,15 @@ max_retries = 3
     return args;
   }
 
+  function replyPayload(overrides = {}) {
+    return {
+      op: "reply-chats",
+      args: replyArgs(overrides),
+      globals: state.globals,
+      noBump: state.reply.noBump === true,
+    };
+  }
+
   function currentPayload() {
     const globals = state.globals;
     if (state.page === "auth") {
@@ -491,7 +506,7 @@ max_retries = 3
       return { op: "authorize", args, globals };
     }
     if (state.page === "apply") return { op: "apply-vacancies", args: applyArgs(), globals };
-    if (state.page === "chats") return { op: "reply-chats", args: replyArgs(), globals };
+    if (state.page === "chats") return replyPayload();
     if (state.page === "clear") return { op: "clear-negotiations", args: clearArgs(), globals };
     if (state.page === "api") return { op: "call-api", args: apiArgs(), globals };
     return null;
@@ -585,8 +600,11 @@ max_retries = 3
     if (!confirmed && payload.op === "apply-vacancies" && state.apply.dryRun !== "yes") {
       if (!window.confirm("Отклики будут отправлены по-настоящему. Продолжить?")) return;
     }
-    if (!confirmed && payload.op === "clear-negotiations" && state.clear.dryRun !== "yes") {
-      if (!window.confirm("Отклики будут скрыты по-настоящему. Продолжить?")) return;
+    if (!confirmed && payload.op === "clear-negotiations" && !payload.args?.includes("--dry-run")) {
+      const text = payload.args?.includes("--delete-chat")
+        ? "Отказы будут скрыты, и их чаты уберутся. ИИ для этого не нужен. Продолжить?"
+        : "Отклики будут скрыты по-настоящему. Продолжить?";
+      if (!window.confirm(text)) return;
     }
     if (!confirmed && payload.op === "logout") {
       if (!window.confirm("Выйти из аккаунта на сайте и стереть локальные токены и куки?")) return;
@@ -1236,9 +1254,15 @@ max_retries = 3
     host.append(cluster, tools);
   }
 
+  function forgetPrompts() {
+    state.promptBook = {};
+    state.promptDraft = {};
+  }
+
   async function onProfile() {
     const select = document.querySelector(".top-controls select");
     state.globals.profile = select.value;
+    forgetPrompts();
     persist();
     await refreshState(false);
     renderTop();
@@ -1278,6 +1302,7 @@ max_retries = 3
             body: JSON.stringify({ name, globals: state.globals }),
           });
           state.globals.profile = name;
+          forgetPrompts();
           persist();
           closeModal();
           await refreshState(false);
@@ -1527,11 +1552,7 @@ max_retries = 3
       }),
       cmdButton("Настроить отклики", "поиск и фильтры", () => go("apply"), { run: false }),
       cmdButton("Пробные чаты", "ответы не уходят", () => {
-        run({
-          op: "reply-chats",
-          args: replyArgs({ dryRun: "yes", loop: "no" }),
-          globals: state.globals,
-        });
+        run(replyPayload({ dryRun: "yes", loop: "no" }));
       }),
       cmdButton("Настроить чаты", "цикл и страницы", () => go("chats"), { run: false }),
       cmdButton("Пробные отказы", "ничего не скроет", () => {
@@ -1736,6 +1757,110 @@ max_retries = 3
     return field(label, row, help);
   }
 
+  function subtabs(items, current, onPick) {
+    const row = el("div", "subtabs");
+    for (const [id, title] of items) {
+      row.append(button(title, `subtab${id === current ? " on" : ""}`, () => onPick(id)));
+    }
+    return row;
+  }
+
+  function promptId(fieldSpec) {
+    return `${fieldSpec.section}.${fieldSpec.key}`;
+  }
+
+  function promptValue(group, fieldSpec) {
+    const draft = state.promptDraft?.[group];
+    const id = promptId(fieldSpec);
+    if (draft && Object.prototype.hasOwnProperty.call(draft, id)) return draft[id];
+    return fieldSpec.value;
+  }
+
+  function setPromptValue(group, fieldSpec, value) {
+    state.promptDraft = state.promptDraft || {};
+    state.promptDraft[group] = state.promptDraft[group] || {};
+    state.promptDraft[group][promptId(fieldSpec)] = value;
+  }
+
+  function promptIsSystem(group, fieldSpec) {
+    return promptValue(group, fieldSpec).trim() === String(fieldSpec.default || "").trim();
+  }
+
+  async function loadPrompts(group) {
+    if (state.promptLoading === group) return;
+    state.promptLoading = group;
+    try {
+      const data = await api(`/api/prompts?${new URLSearchParams({
+        group,
+        configDir: state.globals.configDir || "",
+        profile: state.globals.profile || ".",
+      })}`);
+      state.promptBook = state.promptBook || {};
+      state.promptBook[group] = data;
+      state.promptDraft = state.promptDraft || {};
+      state.promptDraft[group] = {};
+    } catch (error) {
+      state.promptBook = state.promptBook || {};
+      state.promptBook[group] = { tabs: [], message: error.message };
+      toast(error.message);
+    } finally {
+      if (state.promptLoading === group) state.promptLoading = "";
+    }
+    const showing = (group === "apply" && state.page === "apply" && state.applyTab !== "search")
+      || (group === "chats" && state.page === "chats" && state.chatTab !== "run");
+    if (showing) renderMain();
+  }
+
+  async function savePrompt(group, fieldSpec, value) {
+    const text = value == null ? promptValue(group, fieldSpec) : value;
+    const data = await api("/api/prompts", {
+      method: "POST",
+      body: JSON.stringify({
+        globals: state.globals,
+        group,
+        fields: [{ section: fieldSpec.section, key: fieldSpec.key, value: text }],
+      }),
+    });
+    state.promptBook[group] = data;
+    if (state.promptDraft?.[group]) delete state.promptDraft[group][promptId(fieldSpec)];
+    toast(text.trim() === String(fieldSpec.default || "").trim() ? "Снова системный текст" : "Промпт записан");
+    rerender();
+  }
+
+  function promptPane(group, tabId) {
+    const book = state.promptBook?.[group];
+    if (!book) {
+      loadPrompts(group);
+      return el("p", "muted", "Читаю промпты…");
+    }
+    if (book.message) return el("p", "muted", book.message);
+    const tab = (book.tabs || []).find((item) => item.id === tabId);
+    if (!tab) return el("p", "muted", "Эта вкладка не найдена.");
+    const box = el("section", "card stack");
+    box.append(el("p", "muted", "В полях уже системный текст утилиты. Свой текст сохраняется в config.toml. Сброс возвращает системный и убирает свою строку из файла."));
+    for (const fieldSpec of tab.fields) {
+      const area = document.createElement("textarea");
+      area.className = "prompt-box";
+      area.spellcheck = false;
+      area.value = promptValue(group, fieldSpec);
+      const mark = el("span", "muted", promptIsSystem(group, fieldSpec) ? "Системный текст" : "Свой текст");
+      area.addEventListener("input", () => {
+        setPromptValue(group, fieldSpec, area.value);
+        mark.textContent = area.value.trim() === String(fieldSpec.default || "").trim() ? "Системный текст" : "Свой текст";
+      });
+      const actions = el("div", "prompt-actions");
+      actions.append(
+        button("Сохранить", "primary sm", () => savePrompt(group, fieldSpec).catch((error) => toast(error.message))),
+        button("Сбросить", "ghost sm", () => savePrompt(group, fieldSpec, fieldSpec.default).catch((error) => toast(error.message))),
+        mark,
+      );
+      const block = el("div", "stack");
+      block.append(field(fieldSpec.label, area, fieldSpec.help), actions);
+      box.append(block);
+    }
+    return box;
+  }
+
   function renderApply(page) {
     const form = state.apply;
     page.append(pageHead("Автоотклики", "Без строки поиска утилита идёт по рекомендованным вакансиям выбранных резюме. Со строкой — по обычному поиску.", [
@@ -1755,6 +1880,20 @@ max_retries = 3
     page.append(form.dryRun === "yes"
       ? banner("info", "Пробный запуск: отклики не отправляются, в журнале будет только разбор вакансий. Для пробы оставьте 1 страницу и немного вакансий.")
       : banner("warn", "Боевая рассылка. Сайт ограничивает число откликов, около 200 в сутки, и не любит ссылки в письмах."));
+    page.append(subtabs([
+      ["search", "Поиск"],
+      ["filter", "Фильтр"],
+      ["letter", "Письмо"],
+      ["tests", "Тесты"],
+    ], state.applyTab, (id) => {
+      state.applyTab = id;
+      persist();
+      rerender();
+    }));
+    if (state.applyTab !== "search") {
+      page.append(promptPane("apply", state.applyTab));
+      return;
+    }
     page.append(card("Куда откликаться", "", [
       field("Резюме", resumeSelect(form.resumeId, bindApply("resumeId")), "Пусто — все опубликованные резюме."),
       field("Поиск", textInput(form.search, bindApply("search"), { placeholder: "Python backend" }), "Пустая строка переключает режим на рекомендованные вакансии."),
@@ -1763,7 +1902,7 @@ max_retries = 3
       field("На странице", textInput(form.perPage, bindApply("perPage"), { inputmode: "numeric" }), "В утилите по умолчанию 100."),
       field("Не больше откликов", textInput(form.maxResponses, bindApply("maxResponses"), { inputmode: "numeric", placeholder: "без потолка" })),
     ]));
-    page.append(card("Как откликаться", "Тексты писем и промпты задаются только в конфиге. Сюда они не выносятся, чтобы не затирать комментарии случайной записью.", [
+    page.append(card("Как откликаться", "Промпты модели — на вкладках рядом. Здесь только флаги запуска.", [
       field("Пробный запуск", choiceChips([
         ["yes", "Ничего не отправлять"],
         ["no", "Отправлять"],
@@ -1954,7 +2093,7 @@ max_retries = 3
     const launch = (overrides) => {
       state.reply = { ...state.reply, ...overrides };
       persist();
-      run({ op: "reply-chats", args: replyArgs(), globals: state.globals });
+      run(replyPayload());
     };
     page.append(pageHead("Авточаты", "Отвечает работодателю, выбирает кнопку из предложенных вариантов, через 3 дня молчания коротко спрашивает, жива ли вакансия, и выходит из чата при отказе.", [
       button("Пробный проход", "primary", () => launch({ dryRun: "yes", loop: "no" }), { run: true }),
@@ -1966,7 +2105,21 @@ max_retries = 3
     page.append(form.loop === "no"
       ? banner("info", "Один проход по страницам чатов.")
       : banner("warn", "Цикл не заканчивается сам. Остановка — кнопка «Стоп» или Ctrl+C в журнале."));
-    page.append(card("Проход", "Промпты reply_chat_user_prompt, reply_chat_options_prompt, reply_chat_bump_prompt и фраза прощания задаются в конфиге.", [
+    page.append(subtabs([
+      ["run", "Проход"],
+      ["reply", "Ответ"],
+      ["options", "Кнопки"],
+      ["bump", "Напоминание"],
+    ], state.chatTab, (id) => {
+      state.chatTab = id;
+      persist();
+      rerender();
+    }));
+    if (state.chatTab !== "run") {
+      page.append(promptPane("chats", state.chatTab));
+      return;
+    }
+    page.append(card("Проход", "Промпты ответа, кнопок и напоминания — на соседних вкладках.", [
       field("Резюме", resumeSelect(form.resumeId, (value) => {
         state.reply.resumeId = value;
         persist();
@@ -1991,9 +2144,29 @@ max_retries = 3
         state.reply.loop = value;
         persist();
       })),
+      field("Напоминания", checkbox(form.noBump === true, "Не напоминать работодателю", (checked) => {
+        state.reply.noBump = checked;
+        persist();
+      }).label, "Чаты, где последнее сообщение уже ваше, пропускаются. Новые сообщения работодателя по-прежнему получают ответ."),
+    ]));
+    const refusalActions = el("div", "actions");
+    refusalActions.append(
+      button("Показать", "ghost sm", () => run({
+        op: "clear-negotiations",
+        args: ["--delete-chat", "--dry-run"],
+        globals: state.globals,
+      }), { run: true }),
+      button("Убрать", "danger sm", () => run({
+        op: "clear-negotiations",
+        args: ["--delete-chat"],
+        globals: state.globals,
+      }), { run: true }),
+    );
+    page.append(card("Чаты с отказами", "ИИ не нужен. Берутся только отклики со статусом отказ: отклик скрывается и чат убирается. Ответы и напоминания не отправляются.", [
+      span2(field("Прогон", refusalActions, "Показать ничего не удаляет.")),
     ]));
     page.append(card("Без модели", "", [
-      span2(el("p", "muted", "Если AI выключен, на сообщение уходит ближайший быстрый ответ сайта, а напоминание выбирается случайно. С моделью ответы пишутся по промптам. Отказ со статусом DISCARD закрывается без модели. Если модель считает отказ мягким, она отвечает фразой прощания, и утилита выходит из чата.")),
+      span2(el("p", "muted", "Если AI выключен, на сообщение уходит ближайший быстрый ответ сайта. Напоминание без модели выбирается случайно, а с галочкой «Не напоминать» не отправляется. Отказ со статусом DISCARD закрывается без модели.")),
     ], true));
   }
 
