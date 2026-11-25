@@ -28,17 +28,21 @@ curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/in
 
 Панель после этого открывается с другого компьютера: `http://<адрес-машины>:8787`. На ней лежат ключи из `config.toml`. Оставляйте порт только в своей сети и не публикуйте его в интернет.
 
-Другой каталог: `HH_GUI_DIR=/opt/hh-applicant-gui curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash`.
+Другой каталог: `curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash -s -- --dir /opt/hh-applicant-gui`.
 
 ## Фон через systemd
 
 Так панель работает без открытого терминала и поднимается после перезагрузки. Команда ставит сервис и сразу запускает его. Слушает всю локальную сеть, порт 8787:
 
 ```bash
-HH_GUI_SERVICE=1 curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash -s -- --service
 ```
 
-Только этот компьютер, без доступа из сети: добавьте `HH_GUI_HOST=127.0.0.1` перед `curl`.
+`--service` стоит после `bash -s --`. Так скрипт получает аргумент. Только этот компьютер, без доступа из сети:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash -s -- --service --host 127.0.0.1
+```
 
 Дальше обычные команды systemd:
 

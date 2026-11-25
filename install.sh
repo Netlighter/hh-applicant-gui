@@ -6,6 +6,33 @@ REPO="${HH_GUI_REPO:-Netlighter/hh-applicant-gui}"
 BRANCH="${HH_GUI_BRANCH:-main}"
 DEST="${HH_GUI_DIR:-$HOME/hh-applicant-gui}"
 ARCHIVE_URL="${HH_GUI_ARCHIVE_URL:-https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz}"
+SERVICE="${HH_GUI_SERVICE:-0}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --service) SERVICE=1; shift ;;
+    --host)
+      [[ -n "${2:-}" ]] || { echo "После --host нужен адрес, например 127.0.0.1" >&2; exit 1; }
+      HH_GUI_HOST="$2"
+      shift 2
+      ;;
+    --port)
+      [[ -n "${2:-}" ]] || { echo "После --port нужен порт" >&2; exit 1; }
+      HH_GUI_PORT="$2"
+      shift 2
+      ;;
+    --dir)
+      [[ -n "${2:-}" ]] || { echo "После --dir нужен каталог" >&2; exit 1; }
+      DEST="$2"
+      shift 2
+      ;;
+    *)
+      echo "Неизвестный аргумент: $1" >&2
+      echo "Пример: curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash -s -- --service" >&2
+      exit 1
+      ;;
+  esac
+done
 
 as_root() {
   if [[ "$(id -u)" -eq 0 ]]; then
@@ -138,7 +165,7 @@ main() {
   download_sources
   DEST="$(cd "$DEST" && pwd)"
   install_panel "$py"
-  if [[ "${HH_GUI_SERVICE:-}" == "1" ]]; then
+  if [[ "$SERVICE" == "1" ]]; then
     install_service
   elif [[ -f /etc/systemd/system/hh-applicant-gui.service ]] && command -v systemctl >/dev/null 2>&1; then
     as_root systemctl restart hh-applicant-gui.service
@@ -148,7 +175,7 @@ main() {
 
 Панель установлена: $DEST
 Запуск вручную: $DEST/.venv/bin/hh-applicant-gui
-Фоновый сервис: HH_GUI_SERVICE=1 curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash
+Фоновый сервис: curl -fsSL https://raw.githubusercontent.com/Netlighter/hh-applicant-gui/main/install.sh | bash -s -- --service
 
 Повторный запуск этого скрипта обновляет панель. Если сервис уже включён, он перезапускается сам.
 EOF
